@@ -1,0 +1,43 @@
+{
+  "name": "screen-timeout-scheduler",
+  "version": "2.0.0",
+  "description": "熄屏时间调度器 — 按时段自动调整 Windows 屏幕熄屏超时",
+  "main": "src/main.js",
+  "author": "whenjun",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.sifang.screentimeoutscheduler",
+    "productName": "ScreenTimeoutScheduler",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "portable": {
+      "artifactName": "ScreenTimeoutScheduler.exe"
+    },
+    "compression": "maximum"
+  }
+}

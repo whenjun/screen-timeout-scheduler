@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>熄屏时间调度器</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg class="svg-defs" aria-hidden="true">
+    <symbol id="i-overview" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.2"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 9h18c0-1-3-2-3-9"/><path d="M10 21h4"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-tray" viewBox="0 0 24 24"><path d="M4 4h16v12H4z"/><path d="M2 20h20l-2-4H4Z"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M4 4h13l3 3v13H4z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+
+    <header class="titlebar">
+      <div class="tb-brand">
+        <span class="tb-logo">时</span>
+        <span class="tb-name">熄屏时间调度器</span>
+      </div>
+      <div class="tb-drag"></div>
+      <div class="tb-actions">
+        <button class="win-btn" id="btn-min" aria-label="最小化" title="最小化">
+          <svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg>
+        </button>
+        <button class="win-btn" id="btn-max" aria-label="最大化" title="最大化">
+          <svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7"/></svg>
+        </button>
+        <button class="win-btn win-btn-close" id="btn-close" aria-label="隐藏到托盘" title="隐藏到托盘">
+          <svg viewBox="0 0 12 12"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="app-body">
+
+      <nav class="sidebar" aria-label="主导航">
+        <div class="side-group-label">概览</div>
+        <button class="nav-item active" data-page="overview">
+          <svg class="ico"><use href="#i-overview"/></svg><span>状态总览</span>
+        </button>
+
+        <div class="side-group-label">时段规则</div>
+        <button class="nav-item" data-page="lock">
+          <svg class="ico"><use href="#i-lock"/></svg><span>锁屏</span>
+          <span class="nav-badge">最高</span>
+        </button>
+        <button class="nav-item" data-page="lunch">
+          <svg class="ico"><use href="#i-sun"/></svg><span>午休</span>
+        </button>
+        <button class="nav-item" data-page="work">
+          <svg class="ico"><use href="#i-clock"/></svg><span>工作时段</span>
+        </button>
+
+        <div class="side-group-label">诊断</div>
+        <button class="nav-item" data-page="occupy">
+          <svg class="ico"><use href="#i-monitor"/></svg><span>屏幕占用</span>
+        </button>
+
+        <div class="side-spacer"></div>
+        <div class="side-footer">
+          <label class="switch-row">
+            <span class="switch-label">开机自启</span>
+            <input type="checkbox" id="auto-start" class="switch-input">
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+          <div class="side-version" id="side-version">v2.0.0</div>
+        </div>
+      </nav>
+
+      <main class="main">
+        <div class="page-head">
+          <div>
+            <h1 id="page-title">状态总览</h1>
+            <p id="page-subtitle">查看当前生效的策略与运行状态</p>
+          </div>
+          <div class="head-status" id="head-status">
+            <span class="dot"></span><span>自动调度中</span>
+          </div>
+        </div>
+
+        <section class="hero" aria-label="当前生效状态">
+          <div class="hero-main">
+            <div class="hero-eyebrow">当前生效</div>
+            <div class="hero-mode" id="hero-mode">上班时段</div>
+            <div class="hero-note" id="hero-note">按工作时间段配置运行</div>
+          </div>
+          <div class="hero-metric">
+            <div class="hero-number" id="hero-number">30</div>
+            <div class="hero-unit" id="hero-unit">分钟后熄屏</div>
+          </div>
+          <div class="hero-divider"></div>
+          <div class="hero-order">
+            <div class="hero-eyebrow">生效顺序 · 由高到低</div>
+            <div class="stepper" id="stepper">
+              <span class="step" data-mode="lock">锁屏</span>
+              <span class="step-arrow">›</span>
+              <span class="step" data-mode="lunch">午休</span>
+              <span class="step-arrow">›</span>
+              <span class="step" data-mode="work">上班</span>
+              <span class="step-arrow">›</span>
+              <span class="step" data-mode="off">下班</span>
+            </div>
+            <div class="hero-hint">锁屏时忽略全部时段规则，直接使用锁屏超时</div>
+          </div>
+        </section>
+
+        <div class="pages">
+
+          <section class="page active" data-page="overview">
+            <div class="stat-grid">
+              <div class="stat-card">
+                <div class="stat-label">锁屏检测</div>
+                <div class="stat-value" id="stat-lock">未锁屏</div>
+                <div class="stat-foot" id="stat-lock-detail">桌面会话正常</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">当前时段</div>
+                <div class="stat-value" id="stat-mode">上班</div>
+                <div class="stat-foot" id="stat-range">09:00 – 18:00</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">锁屏优先级</div>
+                <div class="stat-value accent">最高</div>
+                <div class="stat-foot">锁屏即覆盖所有时段</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">策略应用</div>
+                <div class="stat-value" id="stat-apply">正常</div>
+                <div class="stat-foot">powercfg 已同步</div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <h2>今日时段安排</h2>
+                <span class="badge-soft">自动切换</span>
+              </div>
+              <div class="timeline">
+                <div class="tl-row" data-mode="lock">
+                  <span class="tl-dot lock"></span>
+                  <span class="tl-name">锁屏时</span>
+                  <span class="tl-tag">最高优先级</span>
+                  <span class="tl-time" id="tl-lock">1 分钟后熄屏</span>
+                </div>
+                <div class="tl-row" data-mode="lunch">
+                  <span class="tl-dot lunch"></span>
+                  <span class="tl-name">午休时段</span>
+                  <span class="tl-tag" id="tl-lunch-tag">已启用</span>
+                  <span class="tl-time" id="tl-lunch">12:00 – 13:00</span>
+                </div>
+                <div class="tl-row" data-mode="work">
+                  <span class="tl-dot work"></span>
+                  <span class="tl-name">上班时段</span>
+                  <span class="tl-tag" id="tl-work-tag">30 分钟</span>
+                  <span class="tl-time" id="tl-work">09:00 – 18:00</span>
+                </div>
+                <div class="tl-row" data-mode="off">
+                  <span class="tl-dot off"></span>
+                  <span class="tl-name">下班时段</span>
+                  <span class="tl-tag" id="tl-off-tag">3 分钟</span>
+                  <span class="tl-time">其余时间</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="two-col">
+              <div class="card">
+                <div class="card-head"><h2>快捷操作</h2></div>
+                <div class="quick-grid">
+                  <button class="quick-btn" id="quick-reapply">
+                    <svg class="ico"><use href="#i-refresh"/></svg><span>立即重新应用</span>
+                  </button>
+                  <button class="quick-btn" id="quick-notify">
+                    <svg class="ico"><use href="#i-bell"/></svg><span>发送测试通知</span>
+                  </button>
+                  <button class="quick-btn" id="quick-log">
+                    <svg class="ico"><use href="#i-clock"/></svg><span>查看状态日志</span>
+                  </button>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-head"><h2>运行状态</h2></div>
+                <div class="info-list">
+                  <div class="info-row"><span>系统托盘</span><span class="ok">常驻中</span></div>
+                  <div class="info-row"><span>时段检查</span><span>每 20 秒</span></div>
+                  <div class="info-row"><span>锁屏检测</span><span>事件 + 3 秒兜底</span></div>
+                  <div class="info-row"><span>配置文件</span><span id="info-cfg">userData</span></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" data-page="lock">
+            <div class="notice-card">
+              <svg class="ico"><use href="#i-shield"/></svg>
+              <div>
+                <div class="notice-title">锁屏拥有最高优先级</div>
+                <div class="notice-text">只要 Windows 会话处于锁定状态，程序立即使用下面的超时值，忽略午休、上班、下班全部时段规则。解锁后自动恢复原策略。</div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h2>锁屏策略</h2><span class="badge-accent">优先于所有时段</span></div>
+              <div class="field-row">
+                <div class="field-info">
+                  <label for="lock-timeout">锁屏熄屏超时</label>
+                  <span>建议设为 1 分钟，锁屏后尽快关闭显示器</span>
+                </div>
+                <div class="field-control">
+                  <input type="range" id="lock-range" min="0" max="60" step="1">
+                  <div class="num-wrap"><input type="number" id="lock-timeout" min="0" max="999"><span>分钟</span></div>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field-info">
+                  <label for="notify-lock">锁屏 / 解锁时推送通知</label>
+                  <span>锁屏界面需停留 2 秒以上才会显示通知内容</span>
+                </div>
+                <div class="field-control tight">
+                  <label class="switch-row">
+                    <input type="checkbox" id="notify-lock" class="switch-input">
+                    <span class="switch" aria-hidden="true"></span>
+                  </label>
+                  <button class="btn btn-secondary btn-sm" id="lock-test">测试通知</button>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h2>检测状态</h2></div>
+              <div class="detect-banner" id="lock-banner">
+                <span class="dot"></span><span id="lock-banner-text">未锁屏 · 按下方时段配置生效</span>
+              </div>
+              <div class="hint-text">主检测使用系统锁屏事件，另有 LogonUI 进程轮询作为兜底，避免事件丢失导致策略不切换。</div>
+            </div>
+          </section>
+
+          <section class="page" data-page="lunch">
+            <div class="card">
+              <div class="card-head">
+                <h2>午休时段</h2>
+                <label class="switch-row">
+                  <span class="switch-label" id="lunch-switch-label">已启用</span>
+                  <input type="checkbox" id="lunch-enabled" class="switch-input">
+                  <span class="switch" aria-hidden="true"></span>
+                </label>
+              </div>
+              <div class="hint-text top">午休仅在「落在上班时段内」时生效，避免误设在非工作时间干扰下班策略。</div>
+              <div class="field-row">
+                <div class="field-info"><label for="lunch-start">午休开始</label><span>午休窗口起点</span></div>
+                <div class="field-control tight"><input type="time" id="lunch-start" class="time-input"></div>
+              </div>
+              <div class="field-row">
+                <div class="field-info"><label for="lunch-end">午休结束</label><span>午休窗口终点</span></div>
+                <div class="field-control tight"><input type="time" id="lunch-end" class="time-input"></div>
+              </div>
+              <div class="field-row">
+                <div class="field-info"><label for="lunch-timeout">午休熄屏超时</label><span>0 表示永不熄屏</span></div>
+                <div class="field-control">
+                  <input type="range" id="lunch-range" min="0" max="120" step="1">
+                  <div class="num-wrap"><input type="number" id="lunch-timeout" min="0" max="999"><span>分钟</span></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" data-page="work">
+            <div class="card">
+              <div class="card-head"><h2>工作时段</h2><span class="badge-soft">跨分界点自动切换</span></div>
+              <div class="field-row">
+                <div class="field-info"><label for="work-start">上班开始</label><span>工作时段起点</span></div>
+                <div class="field-control tight"><input type="time" id="work-start" class="time-input"></div>
+              </div>
+              <div class="field-row">
+                <div class="field-info"><label for="work-end">上班结束</label><span>工作时段终点</span></div>
+                <div class="field-control tight"><input type="time" id="work-end" class="time-input"></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h2>熄屏超时</h2></div>
+              <div class="field-row">
+                <div class="field-info"><label for="work-timeout">上班时段</label><span>工作期间的熄屏等待时间</span></div>
+                <div class="field-control">
+                  <input type="range" id="work-range" min="0" max="120" step="1">
+                  <div class="num-wrap"><input type="number" id="work-timeout" min="0" max="999"><span>分钟</span></div>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field-info"><label for="off-timeout">下班时段</label><span>非工作期间的熄屏等待时间</span></div>
+                <div class="field-control">
+                  <input type="range" id="off-range" min="0" max="120" step="1">
+                  <div class="num-wrap"><input type="number" id="off-timeout" min="0" max="999"><span>分钟</span></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" data-page="occupy">
+            <div class="card">
+              <div class="card-head">
+                <h2>屏幕占用检测</h2>
+                <div class="head-actions">
+                  <button class="btn btn-secondary btn-sm" id="occ-refresh">
+                    <svg class="ico"><use href="#i-refresh"/></svg>刷新
+                  </button>
+                  <label class="switch-row compact">
+                    <span class="switch-label">自动刷新</span>
+                    <input type="checkbox" id="occ-auto" class="switch-input">
+                    <span class="switch" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="hint-text top">解析 powercfg /requests，列出正在阻止显示器熄屏的程序、驱动或服务。</div>
+              <div class="occupy-list" id="occupy-list">
+                <div class="empty-state">
+                  <svg class="ico"><use href="#i-monitor"/></svg>
+                  <span id="occ-empty-text">点击「刷新」开始检测</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div>
+
+        <footer class="action-bar">
+          <div class="save-hint" id="save-hint"><span class="dot"></span>所有更改已同步</div>
+          <div class="action-right">
+            <button class="btn btn-secondary" id="btn-hide">
+              <svg class="ico"><use href="#i-tray"/></svg>隐藏到托盘
+            </button>
+            <button class="btn btn-primary" id="btn-save">
+              <svg class="ico"><use href="#i-save"/></svg>保存并应用
+            </button>
+          </div>
+        </footer>
+      </main>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <div class="modal-backdrop" id="modal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-title" id="modal-title">确认操作</div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="modal-cancel">取消</button>
+        <button class="btn btn-danger" id="modal-confirm">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
