@@ -1,6 +1,6 @@
 # Screen Timeout Scheduler
 
-简体中文 · [English](README.en.md)
+[简体中文](README.md) · English
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)
 ![Electron](https://img.shields.io/badge/Electron-33.2.1-47848F)
@@ -26,6 +26,8 @@ Windows has a single global "Turn off the display" timeout that cannot follow yo
 - **Automatic config migration**: imports settings from the legacy Python version on first run
 
 ## Interface
+
+![Interface preview](docs/preview.png)
 
 | Area | Contents |
 |---|---|
@@ -103,6 +105,8 @@ A timeout of `0` means never turn off the display. On first run, a legacy Python
 
 ```
 .
+├── docs/
+│   └── preview.png       # UI screenshot
 ├── scripts/
 │   └── gen-icons.js      # Generates tray PNGs and the app ICO (pure Node, no deps)
 ├── src/
