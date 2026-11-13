@@ -21,6 +21,7 @@ _*.py
 
 # 本地一次性运维脚本（依赖 WorkBuddy 环境，不应入库）
 scripts/push_to_github.py
+scripts/auto_push.sh
 
 # 图标资产由 scripts/gen-icons.js 在 npm install (prepare) 时生成，不入库
 src/icons/*.png
