@@ -7,6 +7,8 @@
   "license": "MIT",
   "private": true,
   "scripts": {
+    "prepare": "node scripts/gen-icons.js",
+    "icons": "node scripts/gen-icons.js",
     "start": "electron .",
     "dist": "electron-builder --win portable --x64"
   },

@@ -19,4 +19,9 @@ _*.js
 _*.py
 *.png.bak
 
-# 注意：build/icon.ico 与 src/icon.ico 是打包所需资产，需提交，不要忽略
+# 图标资产由 scripts/gen-icons.js 在 npm install (prepare) 时生成，不入库
+src/icons/*.png
+src/icon.ico
+build/icon.ico
+
+# 注意：build/ 目录由生成脚本自动创建
