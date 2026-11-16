@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('appApi', {
   reapply: () => ipcRenderer.invoke('app:reapply'),
   testNotify: () => ipcRenderer.invoke('app:test-notify'),
   openLog: () => ipcRenderer.invoke('app:open-log'),
+  openLoginSettings: () => ipcRenderer.invoke('app:open-login-settings'),
   refreshOccupants: () => ipcRenderer.invoke('occupants:refresh'),
   killPid: (pid, name) => ipcRenderer.invoke('occupants:kill', pid, name),
 

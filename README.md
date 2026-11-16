@@ -2,17 +2,17 @@
 
 [English](README.en.md) · 简体中文
 
-![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20%7C%20macOS%2013%2B-0078D6)
 ![Electron](https://img.shields.io/badge/Electron-33.2.1-47848F)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-339933)
 
-按时段自动调整 Windows 屏幕熄屏超时的桌面小工具。锁屏时立即切换到独立策略，解锁后自动恢复，全程常驻系统托盘。
+按时段自动调整 Windows 或 macOS 屏幕熄屏超时的桌面小工具。锁屏时立即切换到独立策略，解锁后自动恢复，常驻系统托盘或 macOS 菜单栏。
 
 > 当前为 **2.0**，使用 Electron 全量重写（界面与后端均为新实现），取代早期的 Python / Tk 版本。
 
 ## 为什么需要它
 
-Windows 的「关闭显示器」超时是全局设置，无法随作息变化：上班时希望屏幕多亮一会儿，午休或下班后希望尽快熄屏，锁屏后更该立刻关屏。本程序按 **锁屏 / 午休 / 上班 / 下班** 四种状态自动调用 `powercfg` 切换超时，不需要人工干预。
+系统的「关闭显示器」超时无法随作息变化：上班时希望屏幕多亮一会儿，午休或下班后希望尽快熄屏，锁屏后更该尽快关屏。本程序按 **锁屏 / 午休 / 上班 / 下班** 四种状态自动切换超时，不需要人工干预。
 
 ## 特性
 
@@ -20,10 +20,34 @@ Windows 的「关闭显示器」超时是全局设置，无法随作息变化：
 - **四套独立超时**：锁屏、午休、上班、下班分别配置，`0` 表示永不熄屏
 - **现代界面**：自绘标题栏 + 左侧导航 + 状态总览 Hero 卡 + 分页设置 + 固定操作栏
 - **实时状态**：首屏显示当前生效模式、大号熄屏分钟数，以及高亮的生效优先级链
-- **锁屏通知**：锁屏 / 解锁时推送系统 Toast，自动跳过锁屏界面过渡期
-- **屏幕占用检测**：解析 `powercfg /requests`，列出阻止熄屏的程序、驱动与服务，支持结束进程
+- **锁屏通知**：锁屏 / 解锁时推送系统通知；能否显示在锁屏界面取决于系统通知设置
+- **屏幕占用检测**：Windows 读取 `powercfg /requests`，macOS 读取电源断言，支持结束列出的进程
 - **托盘常驻 / 单实例 / 开机自启**
-- **配置自动迁移**：首次运行自动读取 Python 旧版配置，无需重新设置
+- **配置自动迁移**：Windows 首次运行自动读取 Python 旧版配置
+
+## macOS 版
+
+目标系统为 macOS 13 及以上的 Intel、Apple 芯片。界面与 Windows 版保持一致；系统设置由受权后台服务执行 `pmset -a displaysleep`，同时覆盖交流电和电池供电。macOS 版目前只有源码及构建流程，尚无经过真机验收的安装包。
+
+### 安装与首次授权
+
+正式构建的 `.dmg` 中，将应用拖入「应用程序」后启动。首次启动时，按界面提示到「系统设置 → 通用 → 登录项」批准后台服务，再点击「立即重新应用」或等待下一次自动检查。若开启「开机自启」，也应检查登录项是否已启用。策略应用失败时，顶部状态和「策略应用」卡片会显示失败；通知是否出现在锁屏界面由 macOS 通知设置决定。
+
+后台服务需要同一开发者签名的应用调用。它只接受 `0–999` 分钟的显示器熄屏时间，不执行来自界面的任意命令。退出应用后，已写入的系统熄屏设置不会自动恢复。
+
+### 构建
+
+在 Mac 上安装 Node.js 18+ 与 Xcode Command Line Tools 后构建：
+
+```bash
+npm ci
+npm test
+npm run dist:mac
+```
+
+正式分发构建需要 Developer ID Application 证书及 Apple 公证凭据，可通过 electron-builder 支持的 `CSC_LINK`、`CSC_KEY_PASSWORD` 和 `APPLE_API_KEY` 等环境变量提供，不要写入仓库。产物是 `dist/` 下的双架构 `.dmg`。只检查编译和打包时可运行 `MAC_UNSIGNED=1 npm run dist:mac`；临时签名没有开发者 Team ID，后台服务不会接受它的策略调用。GitHub Actions 的 macOS 构建任务使用此模式检查原生工具、服务配置和双架构应用结构。
+
+本仓库尚未在 Mac 真机验证后台服务授权、锁屏 / 解锁、电池 / 交流电切换、占用检测和登录自启；正式发布前须逐项验收。
 
 ## 界面
 
@@ -42,7 +66,7 @@ Windows 的「关闭显示器」超时是全局设置，无法随作息变化：
 
 | 优先级 | 状态 | 判定条件 | 使用配置 |
 |---|---|---|---|
-| 1（最高） | 锁屏 | Windows 会话已锁定 | `lock_timeout` |
+| 1（最高） | 锁屏 | 桌面会话已锁定 | `lock_timeout` |
 | 2 | 午休 | 已启用 **且** 落在上班时段内 **且** 落在午休窗口内 | `lunch_timeout` |
 | 3 | 上班 | 落在上班时段内 | `work_timeout` |
 | 4 | 下班 | 其余所有时间 | `off_timeout` |
@@ -57,7 +81,7 @@ Windows 的「关闭显示器」超时是全局设置，无法随作息变化：
 
 ### 从源码运行
 
-需要 Windows + Node.js 18 或更高版本。
+Windows 版需要 Windows + Node.js 18 或更高版本。
 
 ```bash
 npm install     # prepare 阶段会自动生成图标资产
@@ -74,7 +98,7 @@ npm run dist
 
 ## 配置
 
-配置文件位于 `%APPDATA%\screen-timeout-scheduler\config.json`，也可以直接在界面里修改后点「保存并应用」。
+配置文件位于 Windows 的 `%APPDATA%\screen-timeout-scheduler\config.json` 或 macOS 的 `~/Library/Application Support/screen-timeout-scheduler/config.json`，也可以直接在界面里修改后点「保存并应用」。
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
@@ -95,11 +119,11 @@ npm run dist
 
 ## 工作原理
 
-- **时段调度**：每 20 秒检查一次；状态变化时立即执行 `powercfg /change monitor-timeout-ac|dc <分钟>`，同时设置交流电与电池两种模式。
-- **锁屏检测**：主通道为 Electron `powerMonitor` 的 `lock-screen` / `unlock-screen` 事件，另有每 3 秒一次的 `LogonUI.exe` 轮询兜底，防止事件丢失。
-- **通知**：使用 Electron `Notification`（WinRT Toast）。启动时写入注册表开启锁屏通知与锁屏内容显示（`AllowContentAboveLock`），并在锁屏后延迟 2 秒发送，避开 Windows 切换安全桌面的过渡期。
-- **托盘与生命周期**：托盘图标按模式切换颜色；`app.requestSingleInstanceLock()` 保证单实例；`setLoginItemSettings` 管理开机自启；关闭窗口仅隐藏到托盘。
-- **占用检测**：`powercfg /requests` 输出按 UTF-8 / GBK / cp437 依次尝试解码，解析出进程、驱动、服务条目；`tasklist` 按可执行文件名定位 PID，`taskkill` 结束进程，并禁止结束系统关键进程与程序自身。
+- **时段调度**：每 20 秒检查一次；Windows 执行 `powercfg /change monitor-timeout-ac|dc <分钟>`，macOS 通过受权服务执行 `pmset -a displaysleep <分钟>`。
+- **锁屏检测**：主通道为 Electron `powerMonitor` 的 `lock-screen` / `unlock-screen` 事件；Windows 每 3 秒检查 `LogonUI.exe`，macOS 每 3 秒查询系统锁定状态。
+- **通知**：两端均使用 Electron `Notification`。Windows 启动时写入通知相关注册表设置，并在锁屏后延迟 2 秒发送；macOS 的锁屏显示遵循系统通知偏好。
+- **托盘与生命周期**：托盘或菜单栏图标按模式切换颜色；`app.requestSingleInstanceLock()` 保证单实例；`setLoginItemSettings` 管理登录自启；关闭窗口仅隐藏。
+- **占用检测**：Windows 解析 `powercfg /requests` 并通过 `tasklist` / `taskkill` 定位、结束进程；macOS 通过 IOKit 读取阻止显示器熄屏的电源断言，并在结束前复核 PID。两端均保护系统关键进程与程序自身。
 
 ## 目录结构
 
@@ -108,15 +132,23 @@ npm run dist
 ├── docs/
 │   └── preview.png       # 界面预览
 ├── scripts/
-│   └── gen-icons.js      # 生成托盘 PNG 与应用 ICO（纯 Node，无第三方依赖）
+│   ├── gen-icons.js      # 生成托盘 PNG、Windows ICO 与 macOS 图标源图
+│   └── build-mac.sh      # 在 Mac 上编译双架构辅助工具并打包
+├── mac/
+│   ├── native/           # 受权后台服务与电源断言工具
+│   └── LaunchDaemons/    # 后台服务配置
 ├── src/
 │   ├── main.js           # 主进程：调度、锁屏检测、托盘、通知、IPC、占用检测
+│   ├── config.js         # 配置校验与持久化
+│   ├── scheduler.js      # 两端共用的时段优先级
+│   ├── platform-mac.js   # macOS 系统操作适配
 │   ├── preload.js        # contextBridge 安全桥接
 │   ├── index.html        # 界面结构
 │   ├── styles.css        # 样式与响应式布局
 │   ├── renderer.js       # 交互与状态渲染
 │   └── icons/            # 运行时生成的托盘图标（不入库）
 ├── build/icon.ico        # 运行时生成的打包图标（不入库）
+├── tests/                # 配置和调度测试
 ├── dist/                 # 构建产物
 ├── package.json
 └── package-lock.json
@@ -135,9 +167,9 @@ Electron 便携单文件内置了 Chromium 运行时。该文件超过 GitHub �
 
 ## 已知限制
 
-- 仅支持 Windows（依赖 `powercfg`、注册表与 Windows 通知机制）。
+- macOS 原生服务需要签名应用和首次系统批准；目前缺少 Mac 真机与签名账号，尚未完成实际设备验证。
 - 锁屏检测采用 Electron 事件 + LogonUI 兜底，与旧版 Python 的 `OpenInputDesktop` 方案不同，**尚未在真实 `Win+L` 场景下完整验证**。
-- 只会修改当前电源计划的「关闭显示器」超时，不改动睡眠、休眠等其他电源设置。
+- Windows 只修改当前电源计划的「关闭显示器」超时；macOS 修改全部供电方式的 `displaysleep`。两端均不修改系统睡眠、休眠等设置。
 
 ## 仓库
 

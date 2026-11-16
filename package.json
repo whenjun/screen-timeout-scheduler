@@ -1,7 +1,7 @@
 {
   "name": "screen-timeout-scheduler",
   "version": "2.0.0",
-  "description": "熄屏时间调度器 — 按时段自动调整 Windows 屏幕熄屏超时",
+  "description": "熄屏时间调度器 — 按时段自动调整 Windows 和 macOS 屏幕熄屏超时",
   "main": "src/main.js",
   "author": "whenjun",
   "license": "MIT",
@@ -10,7 +10,9 @@
     "prepare": "node scripts/gen-icons.js",
     "icons": "node scripts/gen-icons.js",
     "start": "electron .",
-    "dist": "electron-builder --win portable --x64"
+    "dist": "electron-builder --win portable --x64",
+    "dist:mac": "bash scripts/build-mac.sh",
+    "test": "node --test tests/*.test.js"
   },
   "devDependencies": {
     "electron": "33.2.1",
@@ -36,6 +38,16 @@
       ],
       "icon": "build/icon.ico",
       "requestedExecutionLevel": "asInvoker"
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["universal"] }],
+      "minimumSystemVersion": "13.0",
+      "icon": "build/icon.icns",
+      "category": "public.app-category.utilities",
+      "hardenedRuntime": true,
+      "binaries": ["Contents/Resources/mac/screen-timeout-helper"],
+      "extraResources": [{ "from": "build/mac", "to": "mac", "filter": ["screen-timeout-helper"] }],
+      "extraFiles": [{ "from": "mac/LaunchDaemons", "to": "Library/LaunchDaemons" }]
     },
     "portable": {
       "artifactName": "ScreenTimeoutScheduler.exe"

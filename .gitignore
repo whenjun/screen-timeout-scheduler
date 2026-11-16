@@ -27,5 +27,7 @@ scripts/auto_push.sh
 src/icons/*.png
 src/icon.ico
 build/icon.ico
+build/icon.icns
+build/mac/
 
 # 注意：build/ 目录由生成脚本自动创建

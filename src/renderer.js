@@ -163,6 +163,22 @@ function render(s) {
   $('stat-range').textContent = `${s.cfg.work_start} – ${s.cfg.work_end}`;
   $('stat-apply').textContent = s.applyOk ? '正常' : '失败';
   $('stat-apply').style.color = s.applyOk ? '' : 'var(--red)';
+  $('head-status').classList.toggle('failed', !s.applyOk);
+  $('head-status-text').textContent = s.applyOk ? '自动调度中' : '策略应用失败';
+  const isMac = s.platform === 'darwin';
+  $('stat-apply-detail').textContent = `${isMac ? 'pmset' : 'powercfg'} ${s.applyOk ? '已同步' : '应用失败'}`;
+  $('mac-permission').hidden = !isMac || s.daemonStatus === 'enabled';
+  if (isMac) {
+    $('tray-label').textContent = '菜单栏图标';
+    $('mac-permission-text').textContent = s.daemonStatus === 'requires-approval'
+      ? '请在系统设置的登录项中批准后台服务，批准后点击「立即重新应用」。'
+      : '后台服务尚未注册或不可用，请安装签名版应用并检查登录项设置。';
+    $('lock-platform').textContent = 'macOS';
+    $('lock-detect-hint').textContent = '主检测使用系统锁屏事件，另有每 3 秒一次的系统锁定状态检查作为兜底。';
+    $('lock-notify-hint').textContent = '通知能否显示在锁屏界面由 macOS 通知设置决定';
+    $('occupy-hint').textContent = '读取 macOS 电源断言，列出正在阻止显示器空闲熄屏的进程。';
+  }
+  $('auto-start-hint').hidden = !isMac || !s.cfg.auto_start || !!s.autoStartActive;
   $('side-version').textContent = `v${s.version}`;
 
   $('tl-lock').textContent = fmtMinutes(s.cfg.lock_timeout) + '后熄屏';
@@ -199,7 +215,7 @@ async function save() {
     const s = await api.saveConfig(draft);
     dirty = false;
     render(s);
-    toast('配置已保存并应用');
+    toast(s.applyOk ? '配置已保存并应用' : '配置已保存，但系统策略应用失败');
   } catch (e) {
     toast('保存失败：' + e.message);
   }
@@ -295,13 +311,14 @@ function init() {
   $('quick-reapply').addEventListener('click', async () => {
     const s = await api.reapply();
     render(s);
-    toast('已重新应用当前策略');
+    toast(s.applyOk ? '已重新应用当前策略' : '策略应用失败，请检查后台服务授权');
   });
   $('quick-notify').addEventListener('click', async () => {
     const ok = await api.testNotify();
     toast(ok ? '测试通知已发送' : '通知发送失败');
   });
   $('quick-log').addEventListener('click', () => api.openLog());
+  $('mac-permission-open').addEventListener('click', () => api.openLoginSettings());
   $('lock-test').addEventListener('click', async () => {
     const ok = await api.testNotify();
     toast(ok ? '测试通知已发送' : '通知发送失败');

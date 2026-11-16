@@ -75,6 +75,7 @@
             <input type="checkbox" id="auto-start" class="switch-input">
             <span class="switch" aria-hidden="true"></span>
           </label>
+          <div class="side-hint" id="auto-start-hint" hidden>请在系统设置的登录项中允许开机自启</div>
           <div class="side-version" id="side-version">v2.0.0</div>
         </div>
       </nav>
@@ -86,7 +87,7 @@
             <p id="page-subtitle">查看当前生效的策略与运行状态</p>
           </div>
           <div class="head-status" id="head-status">
-            <span class="dot"></span><span>自动调度中</span>
+            <span class="dot"></span><span id="head-status-text">自动调度中</span>
           </div>
         </div>
 
@@ -119,6 +120,14 @@
         <div class="pages">
 
           <section class="page active" data-page="overview">
+            <div class="notice-card" id="mac-permission" hidden>
+              <svg class="ico"><use href="#i-shield"/></svg>
+              <div>
+                <div class="notice-title">需要批准后台服务</div>
+                <div class="notice-text" id="mac-permission-text">请在系统设置中允许熄屏时间调度器的后台服务。</div>
+                <button class="btn btn-secondary btn-sm" id="mac-permission-open" type="button">打开登录项设置</button>
+              </div>
+            </div>
             <div class="stat-grid">
               <div class="stat-card">
                 <div class="stat-label">锁屏检测</div>
@@ -138,7 +147,7 @@
               <div class="stat-card">
                 <div class="stat-label">策略应用</div>
                 <div class="stat-value" id="stat-apply">正常</div>
-                <div class="stat-foot">powercfg 已同步</div>
+                <div class="stat-foot" id="stat-apply-detail">powercfg 已同步</div>
               </div>
             </div>
 
@@ -193,7 +202,7 @@
               <div class="card">
                 <div class="card-head"><h2>运行状态</h2></div>
                 <div class="info-list">
-                  <div class="info-row"><span>系统托盘</span><span class="ok">常驻中</span></div>
+                  <div class="info-row"><span id="tray-label">系统托盘</span><span class="ok">常驻中</span></div>
                   <div class="info-row"><span>时段检查</span><span>每 20 秒</span></div>
                   <div class="info-row"><span>锁屏检测</span><span>事件 + 3 秒兜底</span></div>
                   <div class="info-row"><span>配置文件</span><span id="info-cfg">userData</span></div>
@@ -207,7 +216,7 @@
               <svg class="ico"><use href="#i-shield"/></svg>
               <div>
                 <div class="notice-title">锁屏拥有最高优先级</div>
-                <div class="notice-text">只要 Windows 会话处于锁定状态，程序立即使用下面的超时值，忽略午休、上班、下班全部时段规则。解锁后自动恢复原策略。</div>
+                <div class="notice-text">只要<span id="lock-platform">Windows</span>会话处于锁定状态，程序立即使用下面的超时值，忽略午休、上班、下班全部时段规则。解锁后自动恢复原策略。</div>
               </div>
             </div>
             <div class="card">
@@ -225,7 +234,7 @@
               <div class="field-row">
                 <div class="field-info">
                   <label for="notify-lock">锁屏 / 解锁时推送通知</label>
-                  <span>锁屏界面需停留 2 秒以上才会显示通知内容</span>
+                  <span id="lock-notify-hint">锁屏界面需停留 2 秒以上才会显示通知内容</span>
                 </div>
                 <div class="field-control tight">
                   <label class="switch-row">
@@ -241,7 +250,7 @@
               <div class="detect-banner" id="lock-banner">
                 <span class="dot"></span><span id="lock-banner-text">未锁屏 · 按下方时段配置生效</span>
               </div>
-              <div class="hint-text">主检测使用系统锁屏事件，另有 LogonUI 进程轮询作为兜底，避免事件丢失导致策略不切换。</div>
+              <div class="hint-text" id="lock-detect-hint">主检测使用系统锁屏事件，另有 LogonUI 进程轮询作为兜底，避免事件丢失导致策略不切换。</div>
             </div>
           </section>
 
@@ -320,7 +329,7 @@
                   </label>
                 </div>
               </div>
-              <div class="hint-text top">解析 powercfg /requests，列出正在阻止显示器熄屏的程序、驱动或服务。</div>
+              <div class="hint-text top" id="occupy-hint">解析 powercfg /requests，列出正在阻止显示器熄屏的程序、驱动或服务。</div>
               <div class="occupy-list" id="occupy-list">
                 <div class="empty-state">
                   <svg class="ico"><use href="#i-monitor"/></svg>

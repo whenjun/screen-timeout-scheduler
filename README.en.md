@@ -2,17 +2,17 @@
 
 [简体中文](README.md) · English
 
-![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20%7C%20macOS%2013%2B-0078D6)
 ![Electron](https://img.shields.io/badge/Electron-33.2.1-47848F)
 ![Node](https://img.shields.io/badge/Node.js-%E2%89%A518-339933)
 
-A Windows desktop utility that automatically adjusts the display-off timeout based on the time of day. When the session is locked it immediately switches to a dedicated policy, then restores the previous one on unlock. Runs quietly in the system tray.
+A Windows and macOS desktop utility that automatically adjusts the display-off timeout based on the time of day. When the session is locked it immediately switches to a dedicated policy, then restores the previous one on unlock. Runs in the system tray or macOS menu bar.
 
 > This is **2.0**, a full rewrite in Electron (both UI and backend), replacing the earlier Python / Tk version.
 
 ## Why
 
-Windows has a single global "Turn off the display" timeout that cannot follow your schedule: you may want a longer delay while working, a shorter one during lunch or after hours, and an immediate screen-off as soon as you lock the machine. This app switches the timeout automatically between **lock / lunch / work / off** states via `powercfg`.
+The system display-off timeout cannot follow your schedule by itself: you may want a longer delay while working and a shorter one during lunch or after hours. This app switches automatically between **lock / lunch / work / off** states using `powercfg` on Windows and `pmset` on macOS.
 
 ## Features
 
@@ -20,10 +20,34 @@ Windows has a single global "Turn off the display" timeout that cannot follow yo
 - **Four independent timeouts**: lock, lunch, work, and off-hours; `0` means never turn off
 - **Modern UI**: custom title bar, sidebar navigation, status hero card, paged settings, fixed action bar
 - **Live status**: the first screen shows the active mode, a large timeout number, and a highlighted priority chain
-- **Lock notifications**: system toasts on lock / unlock, delayed past the lock-screen transition
-- **Display request inspector**: parses `powercfg /requests`, lists processes / drivers / services preventing the display from turning off, and can terminate them
+- **Lock notifications**: system notifications on lock / unlock; lock-screen visibility depends on system settings
+- **Display request inspector**: shows Windows power requests or macOS power assertions and lets you end listed processes
 - **System tray / single instance / launch at login**
-- **Automatic config migration**: imports settings from the legacy Python version on first run
+- **Automatic config migration**: imports legacy Python settings on first run on Windows
+
+## macOS version
+
+Targets macOS 13+ on Intel and Apple Silicon. The UI matches the Windows version. A privileged background service runs `pmset -a displaysleep` for both AC and battery power. The macOS version currently consists of source code and a build workflow; no installation package has passed real-device acceptance yet.
+
+### Install and authorize
+
+For a formally signed `.dmg`, drag the app into Applications and launch it. Follow the in-app prompt to approve its background service under System Settings → General → Login Items. Then click “Reapply now” or wait for the next scheduled check. If you enable launch at login, confirm that login item is enabled too. The status header and application card show a failure when the system setting could not be applied. Lock-screen notifications follow macOS notification preferences.
+
+The privileged service accepts only display-off timeouts from `0` to `999` minutes from an app signed by the same developer. It does not execute arbitrary commands. Closing the app does not restore the previous system display timeout.
+
+### Build
+
+On a Mac with Node.js 18+ and Xcode Command Line Tools:
+
+```bash
+npm ci
+npm test
+npm run dist:mac
+```
+
+Distribution requires a Developer ID Application certificate and Apple notarization credentials. Supply them through electron-builder environment variables such as `CSC_LINK`, `CSC_KEY_PASSWORD`, and `APPLE_API_KEY`; do not commit credentials. The universal `.dmg` is written under `dist/`. Run `MAC_UNSIGNED=1 npm run dist:mac` to check compilation and packaging only: an ad-hoc signature has no developer Team ID, so the background service rejects policy calls from that build. The macOS GitHub Actions job checks the native tool, service plist, and universal app structure this way.
+
+Real-device verification of service approval, lock / unlock, AC / battery changes, power assertions, and launch at login remains necessary before release.
 
 ## Interface
 
@@ -42,7 +66,7 @@ The lock state gets its own navigation page with a "highest" badge and sits firs
 
 | Priority | State | Condition | Setting |
 |---|---|---|---|
-| 1 (highest) | Lock | Windows session is locked | `lock_timeout` |
+| 1 (highest) | Lock | The desktop session is locked | `lock_timeout` |
 | 2 | Lunch | Enabled **and** inside work hours **and** inside the lunch window | `lunch_timeout` |
 | 3 | Work | Inside work hours | `work_timeout` |
 | 4 | Off | Any other time | `off_timeout` |
@@ -57,7 +81,7 @@ Download `dist/ScreenTimeoutScheduler.exe` from this repository (portable single
 
 ### Run from source
 
-Requires Windows and Node.js 18 or newer.
+The Windows version requires Windows and Node.js 18 or newer.
 
 ```bash
 npm install     # the prepare step generates icon assets
@@ -74,7 +98,7 @@ Output: `dist/ScreenTimeoutScheduler.exe` (electron-builder portable).
 
 ## Configuration
 
-Stored at `%APPDATA%\screen-timeout-scheduler\config.json`; you can also edit it in the UI and click "Save and apply".
+Stored at `%APPDATA%\screen-timeout-scheduler\config.json` on Windows or `~/Library/Application Support/screen-timeout-scheduler/config.json` on macOS; you can also edit it in the UI and click "Save and apply".
 
 | Key | Default | Description |
 |---|---|---|
@@ -95,11 +119,11 @@ A timeout of `0` means never turn off the display. On first run, a legacy Python
 
 ## How it works
 
-- **Scheduling**: checks every 20 seconds; on state change runs `powercfg /change monitor-timeout-ac|dc <minutes>` for both AC and battery.
-- **Lock detection**: primary channel is Electron `powerMonitor` `lock-screen` / `unlock-screen` events, with a `LogonUI.exe` poll every 3 seconds as a fallback against missed events.
-- **Notifications**: Electron `Notification` (WinRT toast). On startup the app enables lock-screen notifications and lock-screen content in the registry (`AllowContentAboveLock`), then sends 2 seconds after locking to get past the secure-desktop transition.
-- **Tray and lifecycle**: tray icon color follows the active mode; `app.requestSingleInstanceLock()` enforces a single instance; `setLoginItemSettings` manages launch at login; closing the window only hides it to the tray.
-- **Display requests**: `powercfg /requests` output is decoded with UTF-8 / GBK / cp437 fallbacks and parsed into process, driver, and service entries; `tasklist` resolves PIDs by executable name and `taskkill` terminates them, with safeguards against system-critical processes and the app itself.
+- **Scheduling**: checks every 20 seconds; Windows applies `powercfg /change monitor-timeout-ac|dc`, while the macOS helper applies `pmset -a displaysleep`.
+- **Lock detection**: Electron `powerMonitor` lock / unlock events are the primary signal. Windows polls `LogonUI.exe` and macOS checks the system lock state every 3 seconds as a fallback.
+- **Notifications**: both platforms use Electron `Notification`. Windows also adjusts notification registry settings and delays lock notifications by 2 seconds; macOS follows its notification preferences.
+- **Tray and lifecycle**: the tray or menu bar icon color follows the active mode; `app.requestSingleInstanceLock()` enforces a single instance; `setLoginItemSettings` manages launch at login; closing the window hides it.
+- **Display requests**: Windows parses `powercfg /requests` and uses `tasklist` / `taskkill`. macOS reads display sleep blocking assertions through IOKit and rechecks PIDs before terminating a process. Both protect critical system processes and the app itself.
 
 ## Project layout
 
@@ -108,15 +132,21 @@ A timeout of `0` means never turn off the display. On first run, a legacy Python
 ├── docs/
 │   └── preview.png       # UI screenshot
 ├── scripts/
-│   └── gen-icons.js      # Generates tray PNGs and the app ICO (pure Node, no deps)
+│   ├── gen-icons.js      # Generates tray PNGs, ICO, and macOS icon source
+│   └── build-mac.sh      # Builds the universal helper and app on macOS
+├── mac/                  # Privileged helper source and launch daemon plist
 ├── src/
 │   ├── main.js           # Main process: scheduling, lock detection, tray, notifications, IPC
+│   ├── config.js         # Configuration validation and persistence
+│   ├── scheduler.js      # Shared schedule priority rules
+│   ├── platform-mac.js   # macOS system adapter
 │   ├── preload.js        # contextBridge security layer
 │   ├── index.html        # UI structure
 │   ├── styles.css        # Styles and responsive layout
 │   ├── renderer.js       # Interactions and state rendering
 │   └── icons/            # Generated tray icons (not committed)
 ├── build/icon.ico        # Generated build icon (not committed)
+├── tests/                # Configuration and scheduling tests
 ├── dist/                 # Build artifacts
 ├── package.json
 └── package-lock.json
@@ -135,9 +165,9 @@ They are generated by `scripts/gen-icons.js` during the `prepare` step of `npm i
 
 ## Limitations
 
-- Windows only (depends on `powercfg`, the registry, and Windows notifications).
+- The macOS helper requires a signed app and initial system approval; real-device verification is still pending.
 - Lock detection uses Electron events plus a LogonUI fallback, which differs from the legacy Python `OpenInputDesktop` approach and **has not yet been fully verified against a real `Win+L` session**.
-- Only the active power plan's display-off timeout is modified; sleep, hibernation, and other power settings are untouched.
+- Windows changes the active power plan's display timeout; macOS changes `displaysleep` for every power source. Neither changes system sleep or hibernation settings.
 
 ## Repository
 

@@ -5,6 +5,10 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, Notification,
 const path = require('path');
 const fs = require('fs');
 const { execFile } = require('child_process');
+const scheduler = require('./scheduler');
+const { DEFAULT_CONFIG, normalizeConfig, persistConfig } = require('./config');
+// 系统相关操作集中在适配层，避免 Windows 命令进入 macOS 路径。
+const mac = process.platform === 'darwin' ? require('./platform-mac') : null;
 
 const APP_TITLE = '熄屏时间调度器';
 const AUMID = 'Sifang.ScreenTimeoutScheduler';
@@ -15,20 +19,14 @@ const LOCK_NOTIFY_DELAY_MS = 2000;
 const CONFIG_DIR = app.getPath('userData');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 const LOG_PATH = path.join(CONFIG_DIR, 'status.log');
-const LEGACY_CONFIG = path.join(process.env.APPDATA || '', 'ScreenTimeoutScheduler', 'config.json');
-
-const DEFAULT_CONFIG = {
-  work_start: '09:00', work_end: '18:00',
-  work_timeout: 30, off_timeout: 3,
-  lunch_enabled: true, lunch_start: '12:00', lunch_end: '13:00', lunch_timeout: 30,
-  lock_timeout: 1, notify_on_lock: true, auto_start: false
-};
+const LEGACY_CONFIG = mac ? null : path.join(process.env.APPDATA || '', 'ScreenTimeoutScheduler', 'config.json');
 
 const MODE_LABEL = { work: '上班时段', lunch: '午休时段', off: '下班时段', lock: '锁屏时段' };
 const MODE_COLOR = { work: '#16a34a', lunch: '#d97706', off: '#6b7280', lock: '#1d4ed8' };
 const SYSTEM_CRITICAL = new Set([
   'system', 'smss.exe', 'csrss.exe', 'wininit.exe', 'services.exe',
-  'lsass.exe', 'ntoskrnl.exe', 'winlogon.exe'
+  'lsass.exe', 'ntoskrnl.exe', 'winlogon.exe',
+  'launchd', 'kernel_task', 'loginwindow', 'windowserver', 'powerd'
 ]);
 
 let cfg = { ...DEFAULT_CONFIG };
@@ -44,6 +42,7 @@ let lastPowerEventAt = 0;
 let notifyTimer = null;
 let checkTimer = null;
 let lockPollTimer = null;
+let evaluationQueue = Promise.resolve();
 
 // ---------------- 基础设施 ----------------
 
@@ -69,12 +68,12 @@ function logEvent(msg) {
 function loadConfig() {
   try {
     if (fs.existsSync(CONFIG_PATH)) {
-      return { ...DEFAULT_CONFIG, ...JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) };
+      return normalizeConfig(JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')));
     }
     // 首次运行：迁移 Python 旧版配置，避免用户重新设置一遍
-    if (fs.existsSync(LEGACY_CONFIG)) {
+    if (LEGACY_CONFIG && fs.existsSync(LEGACY_CONFIG)) {
       const old = JSON.parse(fs.readFileSync(LEGACY_CONFIG, 'utf8'));
-      const merged = { ...DEFAULT_CONFIG, ...old };
+      const merged = normalizeConfig(old);
       fs.writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2), 'utf8');
       logEvent('已从 Python 旧版迁移配置');
       return merged;
@@ -86,49 +85,16 @@ function loadConfig() {
 }
 
 function saveConfig(next) {
-  const clean = {};
-  for (const k of Object.keys(DEFAULT_CONFIG)) {
-    clean[k] = next[k] === undefined ? cfg[k] : next[k];
-  }
-  clean.work_timeout = clampInt(clean.work_timeout, 0, 999);
-  clean.off_timeout = clampInt(clean.off_timeout, 0, 999);
-  clean.lunch_timeout = clampInt(clean.lunch_timeout, 0, 999);
-  clean.lock_timeout = clampInt(clean.lock_timeout, 0, 999);
-  clean.work_start = normalizeTime(clean.work_start, '09:00');
-  clean.work_end = normalizeTime(clean.work_end, '18:00');
-  clean.lunch_start = normalizeTime(clean.lunch_start, '12:00');
-  clean.lunch_end = normalizeTime(clean.lunch_end, '13:00');
-  clean.lunch_enabled = !!clean.lunch_enabled;
-  clean.notify_on_lock = !!clean.notify_on_lock;
-  clean.auto_start = !!clean.auto_start;
-  cfg = clean;
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
-  app.setLoginItemSettings({
-    openAtLogin: cfg.auto_start,
-    path: process.execPath,
-    args: ['--hidden']
-  });
+  cfg = persistConfig(CONFIG_PATH, next, cfg);
+  setAutoStart(cfg.auto_start);
   logEvent('配置已保存');
 }
 
-function clampInt(v, lo, hi) {
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : lo;
-}
-
-function normalizeTime(v, fallback) {
-  const m = /^(\d{1,2}):(\d{1,2})$/.exec(String(v || '').trim());
-  if (!m) return fallback;
-  const h = Math.max(0, Math.min(23, +m[1]));
-  const mi = Math.max(0, Math.min(59, +m[2]));
-  return `${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}`;
-}
-
-function parseHHMM(s) {
-  const m = /^(\d{1,2}):(\d{1,2})$/.exec(String(s || ''));
-  if (!m) return 0;
-  return (+m[1]) * 60 + (+m[2]);
+function setAutoStart(enabled) {
+  // macOS 登录项由系统管理，Windows 继续沿用原来的隐藏启动参数。
+  if (mac) return mac.setAutoStart(enabled);
+  app.setLoginItemSettings({ openAtLogin: enabled, path: process.execPath, args: ['--hidden'] });
+  return app.getLoginItemSettings({ path: process.execPath, args: ['--hidden'] }).openAtLogin;
 }
 
 function nowMinutes() {
@@ -136,24 +102,8 @@ function nowMinutes() {
   return d.getHours() * 60 + d.getMinutes();
 }
 
-function inWindow(now, start, end) {
-  const s = parseHHMM(start), e = parseHHMM(end);
-  if (s === e) return false;
-  return s < e ? (now >= s && now < e) : (now >= s || now < e);
-}
-
 function getMode(now, isLocked) {
-  if (isLocked) return 'lock';                       // 锁屏优先级最高
-  const inWork = inWindow(now, cfg.work_start, cfg.work_end);
-  if (cfg.lunch_enabled && inWork && inWindow(now, cfg.lunch_start, cfg.lunch_end)) {
-    return 'lunch';
-  }
-  return inWork ? 'work' : 'off';
-}
-
-function minutesFor(mode) {
-  return { lock: cfg.lock_timeout, lunch: cfg.lunch_timeout,
-           work: cfg.work_timeout, off: cfg.off_timeout }[mode];
+  return scheduler.getMode(cfg, now, isLocked);
 }
 
 // ---------------- 系统操作 ----------------
@@ -181,6 +131,7 @@ function decodeCli(buf) {
 }
 
 async function applyTimeout(minutes) {
+  if (mac) return mac.applyTimeout(minutes);
   const results = await Promise.all(
     ['monitor-timeout-ac', 'monitor-timeout-dc'].map(opt =>
       run('powercfg', ['/change', opt, String(minutes)]).then(r => r.ok))
@@ -200,6 +151,9 @@ function buildState() {
     applyOk: lastApplyOk,
     locked,
     lockDetail,
+    platform: process.platform,
+    daemonStatus: mac ? mac.daemonStatus() : null,
+    autoStartActive: mac ? mac.autoStartActive() : null,
     cfg: { ...cfg },
     version: app.getVersion()
   };
@@ -209,19 +163,19 @@ function broadcast() {
   if (win && !win.isDestroyed()) win.webContents.send('state:changed', buildState());
 }
 
-async function evaluate(force = false) {
-  const mode = getMode(nowMinutes(), locked);
-  const minutes = minutesFor(mode);
-  if (force || lastMode !== mode) {
-    const ok = await applyTimeout(minutes);
-    const changed = lastMode !== mode;
-    lastMode = mode;
-    currentMinutes = minutes;
-    lastApplyOk = ok;
-    logEvent(`应用 ${MODE_LABEL[mode]} 熄屏 ${minutes} 分钟 (powercfg=${ok ? 'OK' : 'FAIL'})`);
-    if (changed) updateTrayIcon(mode);
+function evaluate(force = false) {
+  // 顺序执行系统设置写入，避免锁屏事件与定时检查交错后应用旧策略。
+  evaluationQueue = evaluationQueue.catch(e => logEvent(`策略队列失败: ${e.message}`)).then(async () => {
+    const result = await scheduler.evaluateMode(lastMode, cfg, nowMinutes(), locked, force || !lastApplyOk, applyTimeout);
+    if (!result.applied) return;
+    lastMode = result.mode;
+    currentMinutes = result.minutes;
+    lastApplyOk = result.applyOk;
+    logEvent(`应用 ${MODE_LABEL[result.mode]} 熄屏 ${result.minutes} 分钟 (${mac ? 'pmset' : 'powercfg'}=${result.applyOk ? 'OK' : 'FAIL'})`);
+    if (result.changed) updateTrayIcon(result.mode);
     broadcast();
-  }
+  });
+  return evaluationQueue;
 }
 
 // ---------------- 锁屏检测 ----------------
@@ -273,6 +227,11 @@ function sendToast(title, body) {
 async function pollLockFallback() {
   // powerMonitor 事件刚到时不要抢，避免短暂抖动
   if (Date.now() - lastPowerEventAt < 3000) return;
+  if (mac) {
+    const present = mac.pollLocked();
+    if (present !== null && present !== locked) setLocked(present, '系统空闲状态兜底');
+    return;
+  }
   const r = await run('tasklist', ['/FI', 'IMAGENAME eq LogonUI.exe', '/NH', '/FO', 'CSV']);
   const present = /LogonUI\.exe/i.test(decodeCli(r.stdout));
   if (present !== locked) setLocked(present, 'LogonUI 兜底');
@@ -334,6 +293,7 @@ async function listProcesses() {
 }
 
 async function refreshOccupants() {
+  if (mac) return mac.refreshOccupants();
   const r = await run('powercfg', ['/requests']);
   if (!r.ok && !r.stdout.length && !r.stderr.length) {
     throw new Error('无法执行 powercfg /requests');
@@ -355,8 +315,24 @@ async function killPid(pid, name) {
   pid = parseInt(pid, 10);
   if (!Number.isFinite(pid)) return { ok: false, msg: '无效的 PID' };
   if (pid === process.pid) return { ok: false, msg: '不能结束本程序自身' };
+  if (mac && /^(ScreenTimeout|screen-timeout)/i.test(String(name || ''))) {
+    return { ok: false, msg: '不能结束本程序自身' };
+  }
   if (SYSTEM_CRITICAL.has(String(name || '').toLowerCase())) {
     return { ok: false, msg: `"${name}" 是系统关键进程，已禁止结束` };
+  }
+  if (mac) {
+    // 再次核对断言及进程名称，防止列表刷新后 PID 被其他进程复用。
+    try {
+      const current = await refreshOccupants();
+      const matching = current.some(e => e.name === name && e.pids.includes(pid));
+      if (!matching) return { ok: false, msg: '该进程已不再占用屏幕，请刷新列表' };
+      process.kill(pid, 'SIGKILL');
+      logEvent(`结束进程 ${name} (PID ${pid}) -> 成功`);
+      return { ok: true, msg: `已结束 ${name}（PID ${pid}）` };
+    } catch (e) {
+      return { ok: false, msg: `结束失败：${e.message}` };
+    }
   }
   const r = await run('taskkill', ['/PID', String(pid), '/T', '/F']);
   const detail = decodeCli(Buffer.concat([r.stdout, r.stderr])).trim();
@@ -407,6 +383,7 @@ function createTray() {
     { label: '退出', click: () => { quitting = true; app.quit(); } }
   ]));
   tray.on('double-click', showWindow);
+  if (mac) tray.on('click', showWindow);
   updateTrayIcon(lastMode || 'work');
 }
 
@@ -418,7 +395,7 @@ function createWindow() {
     backgroundColor: '#F6F7F9',
     show: false,
     title: APP_TITLE,
-    icon: path.join(__dirname, 'icon.ico'),
+    icon: mac ? iconPath('work') : path.join(__dirname, 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -428,7 +405,7 @@ function createWindow() {
   });
   win.loadFile(path.join(__dirname, 'index.html'));
   win.once('ready-to-show', () => {
-    if (!process.argv.includes('--hidden')) showWindow();
+    if (!process.argv.includes('--hidden') && !(mac && mac.wasOpenedAtLogin())) showWindow();
   });
   win.on('close', e => {
     if (!quitting) { e.preventDefault(); hideWindow(); }
@@ -452,6 +429,7 @@ function registerIpc() {
     return ok;
   });
   ipcMain.handle('app:open-log', () => shell.openPath(LOG_PATH));
+  ipcMain.handle('app:open-login-settings', () => mac ? mac.openLoginSettings() : null);
   ipcMain.handle('occupants:refresh', async () => {
     try { return { ok: true, entries: await refreshOccupants() }; }
     catch (e) { return { ok: false, msg: e.message, entries: [] }; }
@@ -474,14 +452,17 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', showWindow);
-  app.setAppUserModelId(AUMID);
+  if (!mac) app.setAppUserModelId(AUMID);
 
   app.whenReady().then(async () => {
     cfg = loadConfig();
-    app.setLoginItemSettings({
-      openAtLogin: cfg.auto_start, path: process.execPath, args: ['--hidden']
-    });
-    ensureNotificationRegistry();
+    try { setAutoStart(cfg.auto_start); }
+    catch (e) { logEvent(`开机自启设置失败: ${e.message}`); }
+    if (mac) {
+      try { mac.ensureDaemon(); } catch (e) { logEvent(`后台服务注册失败: ${e.message}`); }
+    } else {
+      ensureNotificationRegistry();
+    }
     registerIpc();
     createWindow();
     createTray();
@@ -494,6 +475,7 @@ if (!gotLock) {
       lastPowerEventAt = Date.now();
       setLocked(false, 'powerMonitor');
     });
+    powerMonitor.on('resume', () => evaluate(true));
 
     logEvent(`程序启动 v${app.getVersion()} locked=${locked}`);
     await evaluate(true);
@@ -501,6 +483,8 @@ if (!gotLock) {
     checkTimer = setInterval(() => evaluate(false), CHECK_MS);
     lockPollTimer = setInterval(pollLockFallback, LOCK_POLL_MS);
   });
+
+  if (mac) app.on('activate', showWindow);
 
   app.on('before-quit', () => { quitting = true; });
   app.on('window-all-closed', e => { /* 托盘常驻，不退出 */ });

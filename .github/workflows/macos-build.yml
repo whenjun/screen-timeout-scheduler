@@ -1,0 +1,27 @@
+name: macOS 构建检查
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: MAC_UNSIGNED=1 npm run dist:mac
+      # 校验服务配置、辅助工具和应用主程序均进入双架构产物。
+      - run: |
+          plutil -lint mac/LaunchDaemons/com.sifang.screentimeoutscheduler.daemon.plist
+          lipo -archs build/mac/screen-timeout-helper | grep -q x86_64
+          lipo -archs build/mac/screen-timeout-helper | grep -q arm64
+          test -f dist/mac-universal/ScreenTimeoutScheduler.app/Contents/Library/LaunchDaemons/com.sifang.screentimeoutscheduler.daemon.plist
+          test -x dist/mac-universal/ScreenTimeoutScheduler.app/Contents/Resources/mac/screen-timeout-helper
+          lipo -archs dist/mac-universal/ScreenTimeoutScheduler.app/Contents/MacOS/ScreenTimeoutScheduler | grep -q x86_64
+          lipo -archs dist/mac-universal/ScreenTimeoutScheduler.app/Contents/MacOS/ScreenTimeoutScheduler | grep -q arm64

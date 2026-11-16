@@ -1,0 +1,2 @@
+# macOS 构建脚本保持 LF，避免 bash 把 CR 字符当作命令内容。
+*.sh text eol=lf

@@ -183,6 +183,12 @@ function main() {
   const ico = buildIco();
   fs.writeFileSync(path.join(ROOT, 'src', 'icon.ico'), ico);
   fs.writeFileSync(path.join(ROOT, 'build', 'icon.ico'), ico);
+  if (process.argv.includes('--mac')) {
+    // macOS 打包前生成高分辨率源图，再由 iconutil 转成系统图标。
+    const macDir = path.join(ROOT, 'build', 'mac');
+    fs.mkdirSync(macDir, { recursive: true });
+    fs.writeFileSync(path.join(macDir, 'icon.png'), encodePng(1024, renderRgba(1024, BRAND, 2)));
+  }
   console.log(`[gen-icons] 4 个托盘 PNG + 2 个 ICO (${ico.length} bytes) 已生成`);
 }
 
